@@ -143,7 +143,70 @@ with tabs[2]:
 
 with tabs[3]:
     st.subheader('What-if')
-    st.info('Scenario sliders and on-the-fly predictions will appear here.')
+    st.caption('Adjust key indicators to simulate changes in predicted GDP Growth (not causal).')
+
+    # Robust import of training helpers
+    try:
+        from src.models import train as mtrain
+        fit_lightgbm_full = getattr(mtrain, 'fit_lightgbm_full', None)
+        fit_elasticnet_full = getattr(mtrain, 'fit_elasticnet_full', None)
+        NUMERIC_COLS = mtrain.NUMERIC_COLS
+    except Exception:
+        fit_lightgbm_full = None
+        fit_elasticnet_full = None
+        from src.models.train import NUMERIC_COLS  # type: ignore
+
+    # Choose a baseline country
+    countries = list_countries(df)
+    base_country = st.selectbox('Baseline country', countries, index=countries.index('Poland') if 'Poland' in countries else 0)
+    base_row = df[df['name'] == base_country].iloc[0]
+
+    # Slider ranges based on global percentiles for safety
+    def pct_range(col, lo=5, hi=95):
+        s = pd.to_numeric(df[col], errors='coerce').dropna()
+        return float(s.quantile(lo/100.0)), float(s.quantile(hi/100.0))
+
+    cols = ['Inflation Rate','Interest Rate','Debt/GDP','Gov. Budget','Current Account']
+    values = {}
+    g1,g2 = st.columns(2)
+    with g1:
+        for col in cols[:3]:
+            lo, hi = pct_range(col)
+            values[col] = st.slider(f'{col}', lo, hi, float(base_row[col]))
+    with g2:
+        for col in cols[3:]:
+            lo, hi = pct_range(col)
+            values[col] = st.slider(f'{col}', lo, hi, float(base_row[col]))
+
+    # Construct scenario input using baseline for other features
+    scenario = {c: float(base_row[c]) if c in df.columns else 0.0 for c in NUMERIC_COLS}
+    scenario.update(values)
+    scenario_df = pd.DataFrame([scenario])
+
+    # Fit model (prefer LightGBM)
+    model = None
+    if fit_lightgbm_full is not None:
+        try:
+            model = fit_lightgbm_full(df)
+        except Exception:
+            model = None
+    if model is None and fit_elasticnet_full is not None:
+        model = fit_elasticnet_full(df)
+
+    if model is None:
+        st.error('No model available to run the scenario. Please train dependencies or try again.')
+    else:
+        # Predict baseline and scenario
+        baseline_input = pd.DataFrame([{c: float(base_row[c]) for c in NUMERIC_COLS}])
+        baseline_pred = float(model.predict(baseline_input)[0])
+        scenario_pred = float(model.predict(scenario_df)[0])
+        delta = scenario_pred - baseline_pred
+
+        c1,c2,c3 = st.columns(3)
+        c1.metric('Baseline GDP Growth %', f'{baseline_pred:.2f}')
+        c2.metric('Scenario GDP Growth %', f'{scenario_pred:.2f}')
+        c3.metric('Delta (pp)', f'{delta:+.2f}')
+        st.info('These are model-based effects in a cross-sectional snapshot; interpret as directional, not causal.')
 
 with tabs[4]:
     st.subheader('Methodology & Limitations')

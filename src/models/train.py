@@ -128,3 +128,42 @@ def train_lightgbm(df: pd.DataFrame, n_splits: int = 5) -> ModelResult:
     importances = (importances_accum / max(1, len(fold_metrics))).tolist()
     cv = {k: float(np.mean([fm[k] for fm in fold_metrics])) for k in fold_metrics[0].keys()}
     return ModelResult(name="LightGBM", fold_metrics=fold_metrics, cv_metrics=cv, feature_names=NUMERIC_COLS, importances=importances)
+
+
+def fit_elasticnet_full(df: pd.DataFrame):
+    data = df.dropna(subset=[TARGET]).copy()
+    X: pd.DataFrame = data[NUMERIC_COLS].copy()
+    y = data[TARGET].values
+    pre = _numeric_preprocessor(NUMERIC_COLS)
+    model = ElasticNet(alpha=0.1, l1_ratio=0.3, random_state=42)
+    pipe = Pipeline(steps=[('pre', pre), ('model', model)])
+    pipe.fit(X, y)
+    return pipe
+
+
+def fit_lightgbm_full(df: pd.DataFrame):
+    try:
+        import lightgbm as lgb  # type: ignore
+    except Exception as e:
+        raise RuntimeError(f'LightGBM unavailable: {e}')
+    data = df.dropna(subset=[TARGET]).copy()
+    X: pd.DataFrame = data[NUMERIC_COLS].copy()
+    y = data[TARGET].values
+    pre = ColumnTransformer(transformers=[('num', SimpleImputer(strategy='median'), NUMERIC_COLS)])
+    model = lgb.LGBMRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=-1,
+        num_leaves=15,
+        min_data_in_leaf=8,
+        min_gain_to_split=0.0,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        reg_lambda=0.5,
+        random_state=42,
+        n_jobs=-1,
+        verbose=-1,
+    )
+    pipe = Pipeline(steps=[('pre', pre), ('model', model)])
+    pipe.fit(X, y)
+    return pipe
