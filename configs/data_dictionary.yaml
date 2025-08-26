@@ -1,0 +1,51 @@
+fields:
+  name:
+    label: Country
+    type: string
+    description: Country common name
+  region:
+    label: Region
+    type: category
+  subregion:
+    label: Subregion
+    type: category
+  GDP:
+    label: GDP
+    unit: USD billions (current)
+    type: numeric
+  GDP Growth:
+    label: GDP Growth
+    unit: % y/y
+    type: numeric
+    role: target
+  Interest Rate:
+    label: Policy Interest Rate
+    unit: %
+    type: numeric
+  Inflation Rate:
+    label: Inflation Rate
+    unit: % y/y
+    type: numeric
+  Jobless Rate:
+    label: Unemployment Rate
+    unit: %
+    type: numeric
+  Gov. Budget:
+    label: Government Budget Balance
+    unit: % of GDP
+    type: numeric
+  Debt/GDP:
+    label: Debt to GDP
+    unit: % of GDP
+    type: numeric
+  Current Account:
+    label: Current Account Balance
+    unit: % of GDP
+    type: numeric
+  Population:
+    label: Population
+    unit: millions
+    type: numeric
+notes:
+  - Latitude/Longitude used for reference only; not model features by default.
+  - Non-numeric placeholders and missing values will be imputed conservatively.
