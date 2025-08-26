@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+import time
 
-# Ensure project root is on sys.path so  imports work when running from app/
+# Ensure project root is on sys.path so imports work when running from app/
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -11,14 +12,36 @@ if PROJECT_ROOT not in sys.path:
 from src.data.loaders import load_dataset, list_countries
 from src.features.benchmarks import attach_benchmarks
 
+# Performance optimizations
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_cached_data():
+    """Cache the main dataset with benchmarks"""
+    df = load_dataset()
+    df_with_benchmarks = attach_benchmarks(df)
+    return df_with_benchmarks
+
+@st.cache_data(ttl=3600)
+def get_cached_countries():
+    """Cache country list"""
+    return list_countries()
+
+@st.cache_resource(ttl=1800)  # Cache for 30 minutes
+def get_cached_models(df):
+    """Cache trained models"""
+    from src.models.train import train_elasticnet, train_lightgbm
+    elasticnet_result = train_elasticnet(df)
+    lightgbm_result = train_lightgbm(df)
+    return elasticnet_result, lightgbm_result
+
 st.set_page_config(page_title='Global Economic Insights 2025', page_icon='🌍', layout='wide')
 
 st.title('Global Economic Insights 2025')
 st.caption('Interactive cross-sectional analysis, clustering, and predictive insights for 2025.')
 
-# Load data
+# Load data with caching
 with st.spinner('Loading dataset...'):
-    df = load_dataset()
+    df = get_cached_data()
+    countries = get_cached_countries()
 
 if df.empty:
     st.error('No dataset found. Please ensure processed or raw CSV is present in data/.')
@@ -32,7 +55,6 @@ tabs = st.tabs(['Country', 'Predictions', 'Clusters', 'What-if', 'Methodology'])
 
 with tabs[0]:
     st.subheader('Country Profile')
-    countries = list_countries(df)
     sel = st.selectbox('Select a country', countries, index=countries.index('Poland') if 'Poland' in countries else 0)
     if sel:
         bdf = attach_benchmarks(df)
@@ -92,11 +114,19 @@ with tabs[1]:
         enet = None
         lgbm = None
         with st.spinner('Training models...'):
-            enet = train_elasticnet(df)
             try:
-                lgbm = train_lightgbm(df)
+                enet, lgbm = get_cached_models(df)
             except Exception as e:
-                st.warning(f'LightGBM unavailable, showing ElasticNet only. Details: {e}')
+                st.warning(f'Model training failed: {e}')
+                # Fallback to individual training
+                try:
+                    enet = train_elasticnet(df)
+                except Exception as e2:
+                    st.error(f'ElasticNet training failed: {e2}')
+                try:
+                    lgbm = train_lightgbm(df)
+                except Exception as e3:
+                    st.warning(f'LightGBM unavailable: {e3}')
         # Metrics cards with tooltips
         c1, c2, c3 = st.columns(3)
         c1.metric('ElasticNet RMSE', f"{enet.cv_metrics['RMSE']:.2f}", help='Root Mean Squared Error (lower is better).')
@@ -211,3 +241,10 @@ with tabs[3]:
 with tabs[4]:
     st.subheader('Methodology & Limitations')
     st.markdown('- Cross-sectional 2025 snapshot.\n- Cleaning: type coercion, regional/global median imputation.\n- Benchmarks: region, income group (planned), and clusters (planned).')
+    
+    # Performance monitoring
+    st.subheader('Performance')
+    st.markdown(f'- **Dataset size**: {len(df)} countries, {len(df.columns)} features')
+    st.markdown(f'- **Memory usage**: {df.memory_usage(deep=True).sum() / 1024**2:.1f} MB')
+    st.markdown(f'- **Caching**: Data cached for 1 hour, models for 30 minutes')
+    st.markdown('- **Optimizations**: Lazy loading, cached computations, efficient data structures')
