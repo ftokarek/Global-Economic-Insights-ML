@@ -21,9 +21,9 @@ def get_cached_data():
     return df_with_benchmarks
 
 @st.cache_data(ttl=3600)
-def get_cached_countries():
+def get_cached_countries(df):
     """Cache country list"""
-    return list_countries()
+    return list_countries(df)
 
 @st.cache_resource(ttl=1800)  # Cache for 30 minutes
 def get_cached_models(df):
@@ -41,7 +41,7 @@ st.caption('Interactive cross-sectional analysis, clustering, and predictive ins
 # Load data with caching
 with st.spinner('Loading dataset...'):
     df = get_cached_data()
-    countries = get_cached_countries()
+    countries = get_cached_countries(df)
 
 if df.empty:
     st.error('No dataset found. Please ensure processed or raw CSV is present in data/.')
