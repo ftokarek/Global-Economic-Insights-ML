@@ -36,7 +36,7 @@ def get_cached_models(df):
 st.set_page_config(page_title='Global Economic Insights 2025', page_icon='🌍', layout='wide')
 
 st.title('Global Economic Insights 2025')
-st.caption('Interactive cross-sectional analysis, clustering, and predictive insights for 2025.')
+st.caption('Interactive cross-sectional analysis, clustering and predictive insights for 2025.')
 
 # Load data with caching
 with st.spinner('Loading dataset...'):
