@@ -3,7 +3,7 @@ import pandas as pd
 import sys
 import os
 
-# Ensure project root is on sys.path so `src.*` imports work when running from app/
+# Ensure project root is on sys.path so  imports work when running from app/
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -67,11 +67,79 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader('Predictions')
-    st.info('Model training and SHAP explanations will appear here.')
+    st.caption('Cross-validated metrics and feature importances')
+    from src.models.train import train_elasticnet, train_lightgbm
+
+    n_obs = int(df.dropna(subset=['GDP Growth']).shape[0])
+    st.write(f"Samples used (non-missing target): {n_obs}")
+
+    # Glossary expander
+    with st.expander('Glossary of indicators'):
+        glossary = pd.DataFrame([
+            {'Indicator':'GDP','Description':'Gross Domestic Product, USD billions (size of economy).'},
+            {'Indicator':'GDP Growth','Description':'Real GDP growth, % y/y (target variable).'},
+            {'Indicator':'Interest Rate','Description':'Policy interest rate, %.'},
+            {'Indicator':'Inflation Rate','Description':'Consumer price inflation, % y/y.'},
+            {'Indicator':'Jobless Rate','Description':'Unemployment rate, %.'},
+            {'Indicator':'Gov. Budget','Description':'General government balance, % of GDP (surplus + / deficit -).'},
+            {'Indicator':'Debt/GDP','Description':'Public debt, % of GDP.'},
+            {'Indicator':'Current Account','Description':'External current account balance, % of GDP.'},
+            {'Indicator':'Population','Description':'Population in millions.'},
+        ])
+        st.dataframe(glossary, hide_index=True)
+
+    if st.button('Train models'):
+        enet = None
+        lgbm = None
+        with st.spinner('Training models...'):
+            enet = train_elasticnet(df)
+            try:
+                lgbm = train_lightgbm(df)
+            except Exception as e:
+                st.warning(f'LightGBM unavailable, showing ElasticNet only. Details: {e}')
+        # Metrics cards with tooltips
+        c1, c2, c3 = st.columns(3)
+        c1.metric('ElasticNet RMSE', f"{enet.cv_metrics['RMSE']:.2f}", help='Root Mean Squared Error (lower is better).')
+        c2.metric('ElasticNet MAE', f"{enet.cv_metrics['MAE']:.2f}", help='Mean Absolute Error (lower is better).')
+        c3.metric('ElasticNet R²', f"{enet.cv_metrics['R2']:.2f}", help='Explained variance (1=perfect, 0=mean baseline).')
+        if enet.cv_metrics['R2'] < 0:
+            st.info('R² < 0 indicates poor explanatory power in this snapshot; consider additional features or different modeling.')
+        if lgbm is not None:
+            d1, d2, d3 = st.columns(3)
+            d1.metric('LightGBM RMSE', f"{lgbm.cv_metrics['RMSE']:.2f}", help='Root Mean Squared Error (lower is better).')
+            d2.metric('LightGBM MAE', f"{lgbm.cv_metrics['MAE']:.2f}", help='Mean Absolute Error (lower is better).')
+            d3.metric('LightGBM R²', f"{lgbm.cv_metrics['R2']:.2f}", help='Explained variance (1=perfect, 0=mean baseline).')
+            if lgbm.importances is not None:
+                imp = pd.DataFrame({'feature': lgbm.feature_names, 'importance': lgbm.importances}).sort_values('importance', ascending=False)
+                st.markdown('**LightGBM feature importances**')
+                st.bar_chart(imp.set_index('feature'))
+        # Interpretation box
+        st.subheader('Interpretation')
+        st.markdown('- Metrics compare models via cross-validation on the 2025 cross-section.\n- Low/negative R² is expected on a single-year snapshot; importances show which inputs the non-linear model uses most.\n- Use the What-if tab to see how predicted growth reacts to small changes in inputs (not causal).')
+    else:
+        st.info('Click Train models to compute metrics.')
 
 with tabs[2]:
     st.subheader('Clusters')
-    st.info('Clustering visuals will appear here.')
+    from src.models.clustering import fit_kmeans_pca
+    import plotly.express as px
+
+    k = st.slider('Number of clusters (k)', 3, 8, 5)
+    rs = st.number_input('Random state', value=42, step=1)
+    if st.button('Run clustering'):
+        with st.spinner('Clustering countries...'):
+            res = fit_kmeans_pca(df, k=k, random_state=int(rs))
+        st.markdown('**PCA scatter by cluster**')
+        fig = px.scatter(
+            res.pca_coords,
+            x='PC1', y='PC2', color=res.pca_coords['cluster'].astype(str),
+            hover_name='name', hover_data=['region','subregion']
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('**Cluster profiles (median values)**')
+        st.dataframe(res.profile)
+    else:
+        st.info('Choose k and click Run clustering to see clusters.')
 
 with tabs[3]:
     st.subheader('What-if')
